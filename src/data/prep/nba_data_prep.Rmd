@@ -1,0 +1,105 @@
+---
+title: "NBA Beeswarm"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(jsonlite)
+library(beeswarm)
+
+#load data
+
+data = read_csv("../inputs/nba_hometowns.csv")  %>% janitor::clean_names()
+
+countries = read_csv("../inputs/countryContinent.csv")
+
+```
+
+How many players has each country sent to the NBA all time?
+
+```{r prep}
+
+nba = data %>%
+  #drop US because its too much of an outlier
+  filter(country != "US") %>%
+  group_by(country) %>%
+  summarize(players = n()) %>%
+  arrange(-players)
+
+nba = left_join(nba, countries, by = c("country" = "code_2")) %>%
+  select(players, country = country.y, continent)
+
+```
+
+Create a simple beeswarm of NBA players by country grouped by continent
+
+```{r chart}
+
+beeswarm(players ~ continent, data=nba)
+
+```
+
+Let's see what a beeswarm of total points by player grouped by continent would look like.
+
+```{r}
+player_pts = data %>% 
+  filter(country != "US") %>%
+  left_join(countries, by = c("country" = "code_2")) %>%
+  select(player, pts, country = country.y, continent, entered = from) %>%
+  group_by(continent, entered) %>%
+  mutate(continent_rank = rank(pts))
+  
+```
+
+```{r}
+beeswarm(pts ~ continent, data= player_pts)
+```
+stacked squares where x axis = year drafted, y axis = rank by pts
+
+```{r}
+
+ggplot(player_pts) +
+  geom_point(aes(x = entered, y = continent_rank, col = continent))
+```
+
+
+```{r export}
+
+#write_csv(nba, "../outputs/nba.csv")
+nba_clean = read_csv("../outputs/nba.csv")
+nba_json = toJSON(nba_clean, pretty = T)
+
+write_json(nba_clean, "../outputs/nba.js")
+
+#player pts
+write_csv(player_pts, "../outputs/players.csv")
+players_clean = read_csv("../outputs/players.csv")
+write_json(players_clean, "../outputs/players.js")
+
+
+```
+
+#fix ranks
+
+```{r}
+
+players_clean = read_csv("../outputs/players.csv")
+
+players_rank = players_clean %>%
+  select(-continent_rank) %>%
+  mutate(continent_rank = case_when(continent == "Europe" ~ 1,
+                                    continent == "Americas" ~ 2,
+                                    continent == "Africa" ~ 3,
+                                    continent == "Asia" ~ 4,
+                                    continent == "Oceania" ~ 5)) %>%
+  arrange(entered, continent_rank, desc(pts)) %>%
+  group_by(entered) %>%
+  mutate(rank = row_number()) %>%
+  ungroup()
+
+write_json(players_rank, "../outputs/players.js")
+
+
+```
+
